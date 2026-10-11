@@ -125,11 +125,35 @@ p_facet
 p_bar <- ggplot(unemp_summary, aes(x = fct_reorder(region, mean_rate), y = mean_rate)) +
   geom_col() +
   labs(
-    title = "Average Unemployment Rate by Region, 1976 to Present",
+    title = "Average Unemployment Rate by Region",
     x     = "Region",
-    y     = "Mean unemployment rate (%)"
+    y     = "Mean unemployment rate"
   ) +
   theme_minimal()
 
 p_bar
+
+# ---- Part 5.4: Your choice ----
+# Each state's unemployment rate minus the U.S. rate over time.
+# Shows which states run persistently above/below the national rate
+# interesting to compare local with larger trends
+
+unemp_gap <- unemp |>
+  group_by(date) |>
+  mutate(gap = unemployment_rate - unemployment_rate[region == "United States"]) |>
+  ungroup() |>
+  filter(region != "United States")
+
+ggplot(unemp_gap, aes(x = date, y = gap, color = region)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line() +
+  labs(
+    title = "State Unemployment Rate Minus U.S. Rate",
+    x     = "Date",
+    y     = "Gap vs. U.S. (percentage points)",
+    color = "State"
+  ) +
+  theme_minimal()
+
+
 

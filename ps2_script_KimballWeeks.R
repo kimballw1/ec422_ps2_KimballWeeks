@@ -108,3 +108,28 @@ p_lines
 
 # ---- Part 5.2: Faceted line plots ----
 
+p_facet <- ggplot(unemp, aes(x = date, y = unemployment_rate, color = region)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(~ region) +
+  labs(
+    title = "Monthly Unemployment Rate by Region",
+    x     = "Date",
+    y     = "Unemployment rate"
+  ) +
+  theme_minimal()
+
+p_facet
+
+# ---- Part 5.3: Bar chart of mean rate ----
+
+p_bar <- ggplot(unemp_summary, aes(x = fct_reorder(region, mean_rate), y = mean_rate)) +
+  geom_col() +
+  labs(
+    title = "Average Unemployment Rate by Region, 1976 to Present",
+    x     = "Region",
+    y     = "Mean unemployment rate (%)"
+  ) +
+  theme_minimal()
+
+p_bar
+

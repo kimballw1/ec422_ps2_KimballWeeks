@@ -1,0 +1,216 @@
+---
+title: "ps2_WriteUp_KimballWeeks"
+author: "Kimball Weeks"
+format: html
+editor: visual
+---
+
+**GitHub repo:** https://github.com/kimballw1/ec422_ps2_KimballWeeks.git
+
+```{r}
+library(tidyquant)
+library(tidyverse)
+library(knitr)
+```
+
+## Data
+
+The data are monthly, seasonally adjusted unemployment rates for the United States and four states (Oregon, California, Texas, and New York). I pulled them from FRED (Federal Reserve Economic Data, St. Louis Fed) starting in January 1976. The data is saved to `data/unemp_raw.rds` and is read in from that file. The unemployment rate in FRED is labeled as`price`.
+
+```{r}
+unemp_raw = read_rds("data/unemp_raw.rds")
+
+head(unemp_raw)
+```
+
+## Wrangling
+
+I renamed `price` to `unemployment_rate`, added a `region` label, filled in the missing October 2025 observation (lost to the government shutdown) with the September 2025 value, and computed the month over month change in the unemployment rate within each region.
+
+```{r}
+unemp <- unemp_raw |>
+  rename(unemployment_rate = price) |>
+  mutate(
+    region = case_when(
+      symbol == "UNRATE" ~ "United States",
+      symbol == "ORUR" ~ "Oregon",
+      symbol == "CAUR" ~ "California",
+      symbol == "TXUR" ~ "Texas",
+      symbol == "NYUR" ~ "New York"
+    )
+  )
+
+unemp <- unemp |>
+  arrange(region, date) |>
+  group_by(region) |>
+  mutate(
+    unemployment_rate = replace(
+      unemployment_rate,
+      date == as.Date("2025-10-01"),
+      unemployment_rate[date == as.Date("2025-09-01")]
+    )
+  ) |>
+  ungroup()
+
+unemp <- unemp |>
+  arrange(region, date) |>
+  group_by(region) |>
+  mutate(unemployment_rate_change = unemployment_rate - lag(unemployment_rate)) |>
+  ungroup()
+
+unemp_recent <- unemp |>
+  filter(date >= as.Date("2015-01-01"))
+
+unemp_summary <- unemp |>
+  group_by(region) |>
+  summarize(
+    mean_rate = mean(unemployment_rate, na.rm = TRUE),
+    min_rate  = min(unemployment_rate,  na.rm = TRUE),
+    max_rate  = max(unemployment_rate,  na.rm = TRUE)
+  )
+
+unemp_recent_summary <- unemp_recent |>
+  group_by(region) |>
+  summarize(
+    mean_rate = mean(unemployment_rate, na.rm = TRUE),
+    min_rate  = min(unemployment_rate,  na.rm = TRUE),
+    max_rate  = max(unemployment_rate,  na.rm = TRUE)
+  )
+
+unemp_top_increases <- unemp |>
+  slice_max(unemployment_rate_change, n = 5)
+
+unemp_top_decreases <- unemp |>
+  slice_min(unemployment_rate_change, n = 5)
+
+unemp_no_covid <- unemp |>
+  filter(year(date) != 2020)
+
+unemp_top_increases_no_covid <- unemp_no_covid |>
+  slice_max(unemployment_rate_change, n = 5)
+
+unemp_top_decreases_no_covid <- unemp_no_covid |>
+  slice_min(unemployment_rate_change, n = 5)
+```
+
+### Summary statistics, full sample (1976 to present)
+
+Mean, minimum, and maximum unemployment rate (percent) for each region over the full sample.
+
+```{r}
+kable(unemp_summary, digits = 2,
+      col.names = c("Region", "Mean", "Min", "Max"))
+```
+
+### Summary statistics, January 2015 to present
+
+Same statistics, restricted to January 2015 onward.
+
+```{r}
+kable(unemp_recent_summary, digits = 2,
+      col.names = c("Region", "Mean", "Min", "Max"))
+```
+
+### Largest monthly increases, excluding 2020
+
+The five largest month over month increases in the unemployment rate (percentage points) across all regions, with ties kept. All of 2020 is excluded.
+
+```{r}
+unemp_top_increases_no_covid |>
+  select(region, date, unemployment_rate, unemployment_rate_change) |>
+  kable(digits = 2,
+        col.names = c("Region", "Month", "Unemployment rate", "Change from prior month"))
+```
+
+### Largest monthly decreases, excluding 2020
+
+The five largest month-over-month decreases, again excluding 2020.
+
+```{r}
+unemp_top_decreases_no_covid |>
+  select(region, date, unemployment_rate, unemployment_rate_change) |>
+  kable(digits = 2,
+        col.names = c("Region", "Month", "Unemployment rate", "Change from prior month"))
+```
+
+## Visualization
+
+### Unemployment rate over time, all regions
+
+Each line is one region's monthly unemployment rate since 1976.
+
+```{r}
+p_lines <- ggplot(unemp, aes(x = date, y = unemployment_rate, color = region)) +
+  geom_line() +
+  labs(
+    title = "Monthly Unemployment Rate",
+    x     = "Date",
+    y     = "Unemployment rate",
+    color = "Region"
+  ) +
+  theme_minimal()
+
+p_lines
+```
+
+### Unemployment rate over time, by region
+
+The same data with each region in its own panel, which makes each series easier to read on its own.
+
+```{r}
+p_facet <- ggplot(unemp, aes(x = date, y = unemployment_rate, color = region)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(~ region) +
+  labs(
+    title = "Monthly Unemployment Rate by Region",
+    x     = "Date",
+    y     = "Unemployment rate"
+  ) +
+  theme_minimal()
+
+p_facet
+```
+
+### Average unemployment rate by region
+
+Mean unemployment rate over the full sample, ordered from lowest to highest.
+
+```{r}
+p_bar <- ggplot(unemp_summary, aes(x = fct_reorder(region, mean_rate), y = mean_rate)) +
+  geom_col() +
+  labs(
+    title = "Average Unemployment Rate by Region",
+    x     = "Region",
+    y     = "Mean unemployment rate"
+  ) +
+  theme_minimal()
+
+p_bar
+```
+
+### State unemployment rate relative to the U.S.
+
+This plot shows each state's unemployment rate minus the national rate in the same month. Values above the dashed line mean the state's unemployment is higher than the U.S. rate. I wanted to see whether states sit persistently above or below the national rate, and how local labor markets compare with the larger national trend.
+
+```{r}
+unemp_gap <- unemp |>
+  group_by(date) |>
+  mutate(gap = unemployment_rate - unemployment_rate[region == "United States"]) |>
+  ungroup() |>
+  filter(region != "United States")
+
+ggplot(unemp_gap, aes(x = date, y = gap, color = region)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line() +
+  labs(
+    title = "State Unemployment Rate Minus U.S. Rate",
+    x     = "Date",
+    y     = "Gap vs. U.S. (percentage points)",
+    color = "State"
+  ) +
+  theme_minimal()
+```
+
+## Reflection
+
+the assignment and making the plots was mostly straightforward once the templates were filled in. What tripped me up was smaller stuff in the wrangling: a typo in one of the region labels, passing the whole data frame into `mean()` instead of the column, and a date filter that used `>` instead of `>=` and accidentally dropped January 2015. None of those threw an obvious error right away, which made them easy to miss. The trickiest part was the gap plot, where I had to use `group_by(date)` so each state could be compared to the U.S. rate in the same month. I'm more comfortable with R in general now I think but more specifically the tidyverse package which I had learned a long time ago but mostly forgotten so using ggplot took a second to get used to again. I'm catching up to speed and think I can do more with it now.
